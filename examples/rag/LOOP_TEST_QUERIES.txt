@@ -1,0 +1,91 @@
+QUERIES DESIGNED TO TRIGGER SELF-CORRECTION LOOP
+=================================================
+
+These queries are intentionally designed to potentially fail quality checks
+and trigger the rewrite → retry loop in the LangGraph workflow.
+
+WHY LOOPING OCCURS
+==================
+
+The workflow loops when an answer fails quality checks:
+1. Answer too short (< 100 characters)
+2. Missing citations [N]
+3. Contains error messages
+4. Retries still available
+
+LOOP TRIGGERING QUERIES
+========================
+
+1. VAGUE QUERY (likely short answer, missing citations)
+   ./run.sh --index-name test_index --query "Tell me about it" --max-retries 2
+   
+   Why: "it" is ambiguous, may produce generic short response
+
+2. TANGENTIAL QUERY (poor document match)
+   ./run.sh --index-name test_index --query "What is soccer?" --max-retries 2
+   
+   Why: Database contains drill instructions, not general soccer info
+
+3. TOO SPECIFIC (not in database)
+   ./run.sh --index-name test_index --query "What are the exact field dimensions?" --max-retries 2
+   
+   Why: Field dimensions not in soccer drills documents
+
+4. AMBIGUOUS REFERENCE
+   ./run.sh --index-name test_index --query "How does it work?" --max-retries 2
+   
+   Why: "it" is undefined, unclear what user is asking about
+
+5. SINGLE WORD
+   ./run.sh --index-name test_index --query "Drills" --max-retries 2
+   
+   Why: Too vague, not a proper question
+
+6. CONTRADICTORY CONTEXT
+   ./run.sh --index-name test_index --query "What basketball drills are available?" --max-retries 2
+   
+   Why: Asks for basketball in soccer database
+
+EXPECTED WORKFLOW
+=================
+
+For queries that trigger the loop:
+
+Step 1: ANALYZE → decides to RETRIEVE
+Step 2: RETRIEVE → finds some documents (may not be perfect match)
+Step 3: GENERATE → creates answer (may be short or missing citations)
+Step 4: GRADE → FAILS quality check
+Step 5: REWRITE → improves query (adds "Explain in detail" or "with examples")
+Step 2: RETRIEVE → tries again with better query
+Step 3: GENERATE → creates improved answer
+Step 4: GRADE → PASSES (or fails again if max retries not reached)
+
+WATCHING THE LOOP
+=================
+
+When you run these queries, watch for:
+
+✗ QUALITY CHECK FAILED - Will rewrite query and retry
+
+Then you'll see:
+→ Looping back to STEP 2 (RETRIEVE) with improved query...
+
+The rewritten query will be more specific:
+  Original:  Tell me about it
+  Rewritten: Explain in detail: Tell me about it
+
+RUN ALL TESTS
+=============
+
+./test_loop.sh
+
+This runs all loop-triggering queries sequentially with detailed output.
+
+ADJUST RETRY COUNT
+==================
+
+Increase max retries to see multiple loop iterations:
+
+./run.sh --index-name test_index --query "Tell me about it" --max-retries 3
+
+With 3 retries, you might see the loop execute 2-3 times before giving up.

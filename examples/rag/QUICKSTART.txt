@@ -1,0 +1,49 @@
+QUICK START
+===========
+
+PREREQUISITES: See SETUP.md for complete installation steps including:
+  - Cloning langchain-yugabytedb repo
+  - Installing PgDistRagRetriever
+  - Setting up YugabyteDB with pg_dist_rag
+
+ASSUMING SETUP IS DONE:
+
+1. View the workflow graph:
+   cd /home/krishna/code/langgraph/examples/rag
+   
+   # ASCII graph (in terminal)
+   ./show_graph.sh
+   
+   # Mermaid diagram (copy to https://mermaid.live/)
+   ./show_mermaid.sh
+
+2. Set your OpenAI API key:
+   export OPENAI_API_KEY="sk-proj-your-openai-key-here"
+
+3. Run a query:
+   cd /home/krishna/code/langgraph/examples/rag
+   ./run.sh --index-name test_index --query "What are the key coaching points for soccer passing drills?"
+
+
+EXAMPLE QUESTIONS FOR test_index (Soccer Drills Database)
+=========================================================
+
+The database contains 169 chunks from 3 soccer drill documents with information about:
+- Coaching points for drills
+- Drill setup and variations
+- Attacking vs defending exercises
+- Passing and breaking ball drills
+
+Copy & paste these queries:
+
+cd /home/krishna/code/langgraph/examples/rag
+
+./run.sh --index-name test_index --query "What are the key coaching points for soccer passing drills?"
+
+./run.sh --index-name test_index --query "How do you set up a breaking ball drill?"
+
+./run.sh --index-name test_index --query "What are some drill variations for defensive pressure training?"
+
+./run.sh --index-name test_index --query "Explain the setup for attacking vs defending drills"
+
+./run.sh --index-name test_index --query "What equipment is needed for soccer drills?" --k 5

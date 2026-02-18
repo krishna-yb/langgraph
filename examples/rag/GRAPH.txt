@@ -1,0 +1,94 @@
+LANGGRAPH WORKFLOW GRAPH
+========================
+
+    ┌─────────────┐
+    │    START    │
+    └──────┬──────┘
+           │
+           ▼
+    ┌─────────────┐
+    │   ANALYZE   │  ← Check if query needs retrieval
+    └──────┬──────┘
+           │
+      ┌────┴────┐
+      │         │
+      ▼         ▼
+   DIRECT    RETRIEVE  ← Get docs from vector DB
+      │         │
+      │         ▼
+      │    GENERATE   ← LLM generates answer
+      │         │
+      └────┬────┘
+           │
+           ▼
+      ┌────────┐
+      │ GRADE  │      ← Quality check
+      └───┬────┘
+          │
+      ┌───┴────┐
+      │        │
+      ▼        ▼
+    PASS    REWRITE   ← Improve query
+      │        │
+      │        └──────┐
+      │               │
+      ▼               │
+     END         (loop back
+                  to RETRIEVE)
+
+NODES EXPLANATION
+=================
+
+1. ANALYZE
+   • Checks if query contains question words (what, how, why, etc.)
+   • Decides if document retrieval is needed
+   • Routes to either DIRECT answer or RETRIEVE
+
+2. RETRIEVE
+   • Converts query to embeddings (OpenAI text-embedding-3-small)
+   • Performs vector similarity search in YugabyteDB
+   • Returns top-K most relevant document chunks
+   • Default: 4 documents from 169 total chunks
+
+3. GENERATE
+   • Builds context from retrieved documents
+   • Adds citation markers [1], [2], [3], [4]
+   • Sends context + query to LLM (GPT-4o-mini)
+   • Instructs LLM to only use provided context
+
+4. GRADE
+   • Checks if answer length > 100 characters
+   • Verifies citations are present [N]
+   • Checks for error messages
+   • Validates retry budget
+   • Routes to PASS or REWRITE
+
+5. REWRITE
+   • Improves query for better results
+   • Adds "Explain in detail" or "with examples"
+   • Increments iteration counter
+   • Loops back to RETRIEVE
+
+SELF-CORRECTION LOOP
+====================
+
+If answer quality is poor:
+  GRADE → REWRITE → RETRIEVE → GENERATE → GRADE
+  
+This continues until:
+  • Answer passes quality checks, OR
+  • Max retries reached (default: 1)
+
+DATABASE SCHEMA
+===============
+
+test_index table:
+  • 169 vector embeddings (chunks)
+  • 3 source documents (soccer drills)
+  • Vector dimensions: 1536
+  • Embedding model: text-embedding-3-small
+
+Documents:
+  • soccer_drills_page_1.json (62 chunks)
+  • soccer_drills_page_2.json (62 chunks)
+  • soccer_drills_page_3.json (45 chunks)

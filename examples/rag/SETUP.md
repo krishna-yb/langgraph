@@ -172,6 +172,9 @@ python vanilla_langgraph_pgvector_rag.py \
 
 # List available indexes in your database
 python -c "from langchain_yugabytedb import PgDistRagRetriever; from langchain_openai import OpenAIEmbeddings; r = PgDistRagRetriever(connection_string='postgresql+psycopg://yugabyte:yugabyte@127.0.0.1:5433/yugabyte', index_name='dummy', embeddings=OpenAIEmbeddings(model='text-embedding-3-small', dimensions=1536)); print(r.list_available_indexes())"
+
+# Example output:
+# [{'index_name': 'soccer_drills_test', 'ai_provider': 'OPENAI', 'embedding_model_params': {'model': 'text-embedding-3-large', 'dimensions': 1536}, 'index_creation_status': 'INIT', 'source_count': 1}]
 ```
 
 ## What This Example Demonstrates

@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict
 
@@ -32,6 +33,19 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+
+try:
+    try:
+        # Older/newer SDKs may expose CallbackHandler in different modules.
+        from langfuse.callback import CallbackHandler
+    except ImportError:
+        from langfuse.langchain import CallbackHandler
+    LANGFUSE_AVAILABLE = True
+except ImportError as e:
+    LANGFUSE_AVAILABLE = False
+    LANGFUSE_IMPORT_ERROR = str(e)
+else:
+    LANGFUSE_IMPORT_ERROR = ""
 
 LANGCHAIN_YB_PATH = Path.home() / "code" / "langchain-yugabytedb"
 if LANGCHAIN_YB_PATH.exists() and str(LANGCHAIN_YB_PATH) not in sys.path:
@@ -146,6 +160,7 @@ Use ONLY information from the provided context. Include citation numbers [1], [2
             print(f"→ Instructing LLM to use ONLY provided context and include citations...")
             messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
             response = llm.invoke(messages)
+            
             answer = response.content
             print(f"✓ LLM generated answer successfully ({len(answer)} characters)")
             citation_count = answer.count('[')
@@ -482,6 +497,7 @@ def main():
     parser.add_argument("--max-retries", type=int, default=1, help="Max retry attempts")
     parser.add_argument("--show-graph", action="store_true", help="Display workflow graph (ASCII)")
     parser.add_argument("--mermaid", action="store_true", help="Generate Mermaid diagram")
+    parser.add_argument("--langfuse", action="store_true", help="Enable Langfuse observability")
     args = parser.parse_args()
     
     # Show graph without database connection
@@ -501,10 +517,33 @@ def main():
     if not args.index_name or not args.query:
         parser.error("--index-name and --query are required (unless using --show-graph)")
     
-    # Build the graph for query execution
     retriever = setup_retriever(args.connection, args.index_name, args.k)
     llm = setup_llm()
     app = build_rag_graph(retriever, llm)
+    
+    # Initialize Langfuse handler if requested
+    langfuse_handler = None
+    if args.langfuse:
+        # Cookbook uses LANGFUSE_BASE_URL. Map it to LANGFUSE_HOST if needed.
+        if os.getenv("LANGFUSE_BASE_URL") and not os.getenv("LANGFUSE_HOST"):
+            os.environ["LANGFUSE_HOST"] = os.getenv("LANGFUSE_BASE_URL", "")
+
+        if not LANGFUSE_AVAILABLE:
+            print("⚠ --langfuse flag provided but Langfuse callback import failed")
+            print(f"→ Import error: {LANGFUSE_IMPORT_ERROR}")
+            print("→ Install required deps: pip install langfuse langchain")
+        elif not os.getenv("LANGFUSE_PUBLIC_KEY") or not os.getenv("LANGFUSE_SECRET_KEY"):
+            print("⚠ --langfuse flag provided but LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY not set")
+        else:
+            try:
+                # Langfuse cookbook pattern: initialize callback from env vars.
+                langfuse_handler = CallbackHandler()
+                print(
+                    "✓ Langfuse observability enabled | base_url="
+                    f"{os.getenv('LANGFUSE_BASE_URL', os.getenv('LANGFUSE_HOST', 'https://cloud.langfuse.com'))}"
+                )
+            except Exception as e:
+                print(f"⚠ Failed to initialize Langfuse: {e}")
     
     print_graph_structure(app, format_type="ascii")
     
@@ -515,20 +554,29 @@ def main():
     print(f"🗄️  Database Index: {args.index_name}")
     print(f"📊 Top-K Documents: {args.k}")
     print(f"🔄 Max Retry Attempts: {args.max_retries}")
+    if langfuse_handler:
+        print(f"🔍 Langfuse Tracing: Enabled")
     print('='*80)
     print("\nStarting workflow execution...\n")
     
-    result = app.invoke({
-        "query": args.query,
-        "max_retries": args.max_retries,
-        "needs_retrieval": False,
-        "retrieved_docs": [],
-        "messages": [],
-        "answer": "",
-        "is_good_answer": False,
-        "iteration": 0,
-        "workflow_steps": [],
-    })
+    invoke_config = {}
+    if langfuse_handler:
+        invoke_config["callbacks"] = [langfuse_handler]
+
+    result = app.invoke(
+        {
+            "query": args.query,
+            "max_retries": args.max_retries,
+            "needs_retrieval": False,
+            "retrieved_docs": [],
+            "messages": [],
+            "answer": "",
+            "is_good_answer": False,
+            "iteration": 0,
+            "workflow_steps": [],
+        },
+        config=invoke_config if invoke_config else None,
+    )
     
     print(f"\n{'='*80}")
     print("✅ WORKFLOW COMPLETE - FINAL ANSWER")
@@ -549,6 +597,9 @@ def main():
     # Generate dynamic execution path diagram
     print_execution_path(result)
     print('='*80 + '\n')
+
+    if langfuse_handler:
+        langfuse_handler.client.flush()
 
 
 if __name__ == "__main__":
